@@ -16,8 +16,12 @@ import streamlit_authenticator as stauth
 # In a real app, you might store this in a yaml file or environment variables
 credentials = {
     'usernames': {
-        'manager': {
-            'name': 'League Manager',
+        'fudge': {
+            'name': 'Fudge',
+            'password': '$2b$12$/PoUYqeymevDjfpmuo8S.ertjeVxEj3CmqPcdkWc6RfottJjXR1dK' # Hashed 'izyourboystrap'
+        },
+        'stu_baby': {
+            'name': 'Stu Baby',
             'password': '$2b$12$/PoUYqeymevDjfpmuo8S.ertjeVxEj3CmqPcdkWc6RfottJjXR1dK' # Hashed 'izyourboystrap'
         }
     }
