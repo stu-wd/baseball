@@ -134,36 +134,108 @@ def get_player_status_in_fantasy(player_ids):
     ownership_map = {}
     for p in data.get('players', []):
         player_id = str(p.get('id'))
-        team_id = p.get('onTeamId', 0)
-        ownership_map[player_id] = team_id
+        ownership_map[player_id] = {
+            'team_id': p.get('onTeamId', 0),
+            'owned_pct': round(p.get('player', {}).get('ownership', {}).get('percentOwned', 0), 1)
+        }
     return ownership_map
+
+def get_top_free_agent_pitchers(limit=50):
+    url = f"https://lm-api-reads.fantasy.espn.com/apis/v3/games/flb/seasons/{SEASON_ID}/segments/0/leagues/{LEAGUE_ID}?view=kona_player_info"
+    
+    # filterSlotIds for Pitchers: 11 (P), 14 (SP), 15 (RP)
+    # filterStatus: FREEAGENT, WAIVERS
+    filters = {
+        "players": {
+            "filterStatus": {"value": ["FREEAGENT", "WAIVERS"]},
+            "filterSlotIds": {"value": [14, 15]},
+            "sortPercOwned": {"sortPriority": 2, "sortAsc": False},
+            "limit": limit
+        }
+    }
+    
+    headers = {"x-fantasy-filter": json.dumps(filters)}
+    response = requests.get(url, cookies=COOKIES, headers=headers)
+    
+    if response.status_code != 200:
+        return []
+        
+    players = []
+    # ESPN Slot IDs: 14=SP, 15=RP, 11=P (V3 labels vary, these are core)
+    slot_names = {14: 'SP', 15: 'RP', 11: 'P', 5: 'OF', 4: 'SS', 3: '3B', 2: '2B', 1: '1B', 0: 'C', 12: 'UTIL'}
+    
+    for p in response.json().get('players', []):
+        player = p.get('player', {})
+        eligible_slots = player.get('eligibleSlots', [])
+        # Only show relevant pitching slots for the position string
+        pos_labels = [slot_names.get(s, str(s)) for s in eligible_slots if s in [14, 15, 11]]
+        
+        players.append({
+            'Name': player.get('fullName'),
+            'Owned %': round(player.get('ownership', {}).get('percentOwned', 0), 1),
+            'Status': p.get('status'),
+            'Position': '/'.join(pos_labels) if pos_labels else 'P',
+        })
+    return players
 
 def get_waiver_starts():
     load_team_names()
     today = datetime.now(ZoneInfo("America/New_York"))
-    # Check next 7 days for waivers
     date_range = [(today + timedelta(days=i)).strftime("%Y%m%d") for i in range(8)]
     
-    all_mlb_probables = get_all_mlb_probables(date_range)
-    if not all_mlb_probables:
+    # 1. Fetch free agent pitchers and their starter status
+    # We fetch top 200 to cover almost all potential starters
+    url = f"https://lm-api-reads.fantasy.espn.com/apis/v3/games/flb/seasons/{SEASON_ID}/segments/0/leagues/{LEAGUE_ID}?scoringPeriodId=3&view=kona_player_info"
+    filters = {
+        "players": {
+            "filterStatus": {"value": ["FREEAGENT", "WAIVERS"]},
+            "filterSlotIds": {"value": [14, 15]},
+            "sortPercOwned": {"sortPriority": 2, "sortAsc": False},
+            "limit": 200
+        }
+    }
+    headers = {"x-fantasy-filter": json.dumps(filters)}
+    response = requests.get(url, cookies=COOKIES, headers=headers)
+    if response.status_code != 200:
         return []
+        
+    fa_players = response.json().get('players', [])
+    starter_map = {} # proGameId -> list of (player_name, owned_pct)
     
-    unique_ids = list(set(p['id'] for p in all_mlb_probables))
-    ownership_map = get_player_status_in_fantasy(unique_ids)
+    for p in fa_players:
+        player = p.get('player', {})
+        name = player.get('fullName')
+        owned_pct = round(player.get('ownership', {}).get('percentOwned', 0), 1)
+        starts = player.get('starterStatusByProGame', {})
+        for game_id, status in starts.items():
+            if status == "PROBABLE":
+                if game_id not in starter_map:
+                    starter_map[game_id] = []
+                starter_map[game_id].append((name, owned_pct))
     
+    # 2. Map back to dates using MLB Scoreboard
     waiver_starts = []
-    for s in all_mlb_probables:
-        on_team_id = ownership_map.get(s['id'], 0)
-        if on_team_id == 0:
-            s['Display Date'] = datetime.strptime(s['date'], "%Y%m%d").strftime("%a, %b %d")
-            waiver_starts.append({
-                'Pitcher': s['name'],
-                'Time': s['time'],
-                'Date': s['Display Date'],
-                'Game': s['game']
-            })
+    for date_str in date_range:
+        scoreboard = get_mlb_scoreboard(date_str)
+        if not scoreboard:
+            continue
             
-    return sorted(waiver_starts, key=lambda x: x['Date'])
+        display_date = datetime.strptime(date_str, "%Y%m%d").strftime("%a, %b %d")
+        for event in scoreboard.get('events', []):
+            game_id = str(event['id'])
+            if game_id in starter_map:
+                game_name = event['name']
+                event_time = to_est_time(event['date'])
+                for name, owned_pct in starter_map[game_id]:
+                    waiver_starts.append({
+                        'Pitcher': name,
+                        'Owned %': owned_pct,
+                        'Time': event_time,
+                        'Date': display_date,
+                        'Game': game_name
+                    })
+                        
+    return sorted(waiver_starts, key=lambda x: datetime.strptime(x['Date'], "%a, %b %d").replace(year=2026))
 
 def get_organized_starts():
     load_team_names()

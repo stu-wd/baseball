@@ -26,7 +26,7 @@ with st.sidebar:
 def get_data():
     return logic.get_organized_starts()
 
-tab1, tab2 = st.tabs(["🏆 Active Matchup", "🆓 Waiver Wire Probables"])
+tab1, tab2, tab3 = st.tabs(["🏆 Active Matchup", "🆓 Waiver Wire Probables", "🔥 Top Available Pitchers"])
 
 with tab1:
     with st.spinner("Fetching matchup probables..."):
@@ -47,18 +47,39 @@ with tab1:
             st.dataframe(df, use_container_width=True, hide_index=True)
 
 with tab2:
-    st.header("Available Probable Starters")
+    st.header("📋 Probable Starts on Waivers")
     st.markdown("Pitchers starting in the next 7 days who are currently unowned in your league.")
     
-    if st.button("🔍 Scan Waiver Wire"):
-        with st.spinner("Scanning MLB scoreboard and checking fantasy ownership..."):
-            waiver_data = logic.get_waiver_starts()
-            
-        if not waiver_data:
-            st.info("No unowned probable starters found for the next 7 days.")
-        else:
-            df_waiver = pd.DataFrame(waiver_data)
-            st.dataframe(df_waiver, use_container_width=True, hide_index=True)
-            st.success(f"Found {len(waiver_data)} available starts!")
+    with st.spinner("Scanning MLB scoreboard and checking fantasy ownership..."):
+        waiver_data = logic.get_waiver_starts()
+        
+    if not waiver_data:
+        st.info("No unowned probable starters found for the next 7 days.")
+    else:
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.subheader("Waiver Wire Opportunities")
+        with col2:
+            st.metric("Total Available", len(waiver_data))
+        
+        df_waiver = pd.DataFrame(waiver_data)
+        st.dataframe(df_waiver, use_container_width=True, hide_index=True)
+        st.success(f"Found {len(waiver_data)} available starts!")
+
+with tab3:
+    st.header("🔥 Top Unrostered Pitchers")
+    st.markdown("Highest percent-owned pitchers currently available (Free Agents or Waivers).")
+    
+    with st.spinner("Fetching full player pool..."):
+        # Increased limit as requested to 100
+        top_pitchers = logic.get_top_free_agent_pitchers(limit=100)
+        
+    if not top_pitchers:
+        st.warning("Could not fetch player pool data.")
+    else:
+        df_top = pd.DataFrame(top_pitchers)
+        if not df_top.empty:
+            st.dataframe(df_top[["Name", "Owned %", "Position", "Status"]], use_container_width=True, hide_index=True)
+            st.info("Showing top 100 pitchers by ownership percentage.")
 
 st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
