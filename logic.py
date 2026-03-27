@@ -115,6 +115,59 @@ def get_pitcher_starts(date, pitcher_ids):
                         })
     return starts
 
+def get_organized_starts():
+    load_team_names()
+    opponent_id, matchup_id = get_current_matchup_opponent(MY_TEAM_ID)
+    if not opponent_id:
+        return {}
+
+    # Calculate dates
+    today = datetime.now(ZoneInfo("America/New_York"))
+    if matchup_id == 1:
+        start_date = datetime(2026, 3, 25, tzinfo=ZoneInfo("America/New_York"))
+        end_date = datetime(2026, 4, 5, tzinfo=ZoneInfo("America/New_York"))
+    else:
+        start_date = today - timedelta(days=today.weekday())
+        end_date = start_date + timedelta(days=6)
+
+    my_pitchers = get_team_pitchers(MY_TEAM_ID)
+    opp_pitchers = get_team_pitchers(opponent_id)
+    
+    all_pitchers = my_pitchers + opp_pitchers
+    pitcher_ids = set(p['id'] for p in all_pitchers)
+    
+    starts = []
+    current_date = start_date
+    while current_date <= end_date:
+        date_str = current_date.strftime("%Y%m%d")
+        day_starts = get_pitcher_starts(date_str, pitcher_ids)
+        for s in day_starts:
+            p_info = next((p for p in all_pitchers if p['name'] == s['name']), {})
+            s['team'] = p_info.get('team_name', 'Unknown')
+            starts.append(s)
+        current_date += timedelta(days=1)
+    
+    if not starts:
+        return {}
+
+    # Group by Fantasy Team
+    teams_dict = {}
+    for s in starts:
+        team_name = s['team']
+        if team_name not in teams_dict:
+            teams_dict[team_name] = []
+        
+        # Clean for display
+        s['Display Date'] = datetime.strptime(s['date'], "%Y%m%d").strftime("%a, %b %d")
+        teams_dict[team_name].append({
+            'Pitcher': s['name'],
+            'Time': s['time'],
+            'Date': s['Display Date'],
+            'Game': s['game']
+        })
+        
+    return teams_dict
+
 def main():
     load_team_names()
     print(f"Checking schedule for Team {get_team_name(MY_TEAM_ID)}...")
@@ -123,61 +176,9 @@ def main():
         print("Couldn't find current matchup.")
         return
 
-    print(f"Current Matchup: {MY_TEAM_ID} vs {opponent_id} (Matchup Period {matchup_id})")
+    print(f"Current Matchup: {get_team_name(MY_TEAM_ID)} vs {get_team_name(opponent_id)} (Matchup Period {matchup_id})")
     
-    # Calculate dates for the matchup
-    # If matchup_id == 1 and today is late March 2026
-    # Let's just find "this week" (Monday to Sunday)
-    # But user says first matchup is longer.
-    # We can detect opening day. Opening day was likely March 25 or 26.
-    
-    today = datetime.now(ZoneInfo("America/New_York"))
-    # Matchup Period 1 detection: March 25 onwards
-    if matchup_id == 1:
-        start_date = datetime(2026, 3, 25, tzinfo=ZoneInfo("America/New_York"))
-        # End date for Matchup 1 is the following Sunday (not this one, but the next one usually?)
-        # Actually in 2026, March 29 is Sunday. If March 25 is Wednesday.
-        # Most leagues extend it to the NEXT Sunday April 5.
-        end_date = datetime(2026, 4, 5, tzinfo=ZoneInfo("America/New_York"))
-    else:
-        # Standard weekly matchup (Monday to Sunday)
-        start_date = today - timedelta(days=today.weekday())
-        end_date = start_date + timedelta(days=6)
-
-    print(f"Matchup Range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
-
-    my_pitchers = get_team_pitchers(MY_TEAM_ID)
-    opp_pitchers = get_team_pitchers(opponent_id)
-    
-    all_pitchers = my_pitchers + opp_pitchers
-    pitcher_map = {p['id']: p['name'] for p in all_pitchers}
-    pitcher_ids = set(p['id'] for p in all_pitchers)
-    
-    starts = []
-    current_date = start_date
-    while current_date <= end_date:
-        date_str = current_date.strftime("%Y%m%d")
-        print(f"Fetching probables for {date_str}...", end='\r')
-        day_starts = get_pitcher_starts(date_str, pitcher_ids)
-        for s in day_starts:
-            # Tag with team info
-            p_info = next((p for p in all_pitchers if p['name'] == s['name']), {})
-            s['team'] = p_info.get('team_name', 'Unknown')
-            starts.append(s)
-        current_date += timedelta(days=1)
-    
-    print("\n" + "="*50)
-    if not starts:
-        print("No upcoming starts found for this matchup range.")
-        return
-
-    # Group by Fantasy Team
-    teams_dict = {}
-    for s in starts:
-        team_name = s['team']
-        if team_name not in teams_dict:
-            teams_dict[team_name] = []
-        teams_dict[team_name].append(s)
+    teams_dict = get_organized_starts()
 
     # Print each team's table
     for team_name, team_starts in teams_dict.items():
