@@ -61,20 +61,86 @@ with st.sidebar:
 
 
 @st.cache_data(ttl=3600)  # Cache for 1 hour to stay within API limits
-def get_data():
-    return logic.get_organized_starts()
+def get_dashboard_payload():
+    return (
+        logic.get_organized_starts(),
+        logic.get_matchup_dashboard_data(),
+        logic.get_matchup_player_stats(),
+    )
 
 
-tab1, tab2, tab3 = st.tabs(
-    ["🏆 Active Matchup", "🆓 Waiver Wire Probables", "🔥 Top Available Pitchers"]
+tab1, tab2, tab3, tab4 = st.tabs(
+    [
+        "🏆 Matchup Overview",
+        "📅 Scheduled Starts",
+        "🆓 Waiver Wire Probables",
+        "🔥 Top Available Pitchers",
+    ]
 )
 
 with tab1:
-    with st.spinner("Fetching matchup probables..."):
-        data = get_data()
+    with st.spinner("Fetching matchup info..."):
+        _, matchup_score, player_stats = get_dashboard_payload()
+
+    if matchup_score:
+        c1, spacer, c2 = st.columns([1, 0.2, 1])
+
+        # Determine who is who to show "Your Team" vs "Opponent"
+        if matchup_score["home_name"] == logic.get_team_name(logic.MY_TEAM_ID):
+            my_score = matchup_score["home_score"]
+            my_name = matchup_score["home_name"]
+            opp_score = matchup_score["away_score"]
+            opp_name = matchup_score["away_name"]
+        else:
+            my_score = matchup_score["away_score"]
+            my_name = matchup_score["away_name"]
+            opp_score = matchup_score["home_score"]
+            opp_name = matchup_score["home_name"]
+
+        with c1:
+            st.metric(f"YOU: {my_name}", f"{my_score:.1f}")
+        with c2:
+            st.metric(
+                f"OPP: {opp_name}",
+                f"{opp_score:.1f}",
+                delta=round(my_score - opp_score, 1),
+            )
+
+    if player_stats:
+        with st.expander("📊 Detailed Matchup Comparison", expanded=True):
+            st.markdown(
+                "Full roster performance for yesterday and the entire matchup period."
+            )
+            col1, col2 = st.columns(2)
+
+            # Formatted data for YOU
+            df_my = pd.DataFrame(player_stats["my_team"])
+            # Formatted data for OPP
+            df_opp = pd.DataFrame(player_stats["opp_team"])
+
+            with col1:
+                st.markdown(f"**{my_name}**")
+                st.dataframe(
+                    df_my,
+                    use_container_width=True,
+                    hide_index=True,
+                    height=380,  # Exactly 10 rows
+                )
+            with col2:
+                st.markdown(f"**{opp_name}**")
+                st.dataframe(
+                    df_opp,
+                    use_container_width=True,
+                    hide_index=True,
+                    height=380,  # Exactly 10 rows
+                )
+
+with tab2:
+    with st.spinner("Fetching scheduled starts..."):
+        data, _, _ = get_dashboard_payload()
 
     if not data:
-        st.error("No current matchup or probable starts found.")
+        st.error("No probable starts found for the current matchup period.")
     else:
         for team_name, starts in data.items():
             st.divider()
@@ -85,9 +151,15 @@ with tab1:
                 st.metric("Total Starts", len(starts))
 
             df = pd.DataFrame(starts)
+            # Ensure Points is visible and formatted nicely
+            if not df.empty and "Points" in df.columns:
+                # Reorder columns to put Points second
+                cols = ["Pitcher", "Points", "Time", "Date", "Game"]
+                df = df[cols]
+
             st.dataframe(df, use_container_width=True, hide_index=True)
 
-with tab2:
+with tab3:
     st.header("📋 Probable Starts on Waivers")
     st.markdown(
         "Pitchers starting in the next 7 days who are currently unowned in your league."
@@ -109,7 +181,7 @@ with tab2:
         st.dataframe(df_waiver, use_container_width=True, hide_index=True)
         st.success(f"Found {len(waiver_data)} available starts!")
 
-with tab3:
+with tab4:
     st.header("🔥 Top Unrostered Pitchers")
     st.markdown(
         "Highest percent-owned pitchers currently available (Free Agents or Waivers)."
@@ -129,6 +201,7 @@ with tab3:
                 use_container_width=True,
                 hide_index=True,
             )
+            st.info("Showing top 100 pitchers by ownership percentage.")
             st.info("Showing top 100 pitchers by ownership percentage.")
 
 st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")

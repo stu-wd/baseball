@@ -44,22 +44,60 @@ def to_est_time(utc_string):
     dt_est = dt_utc.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("America/New_York"))
     return dt_est.strftime("%I:%M %p")
 
-def get_current_matchup_opponent(team_id):
+def get_current_matchup_info():
+    # mMatchupScore has the metadata like currentMatchupPeriod
     data = get_league_data("mMatchupScore")
     if not data:
-        return None, None
+        return None, None, None
     
-    scoring_period = data.get('scoringPeriodId')
-    schedule = data.get('schedule', [])
+    current_matchup_period = data['status']['currentMatchupPeriod']
+    
+    # mScoreboard is better for live scores and roster entry IDs
+    sb_data = get_league_data("mScoreboard")
+    if not sb_data:
+        sb_data = data
+        
+    schedule = sb_data.get('schedule', [])
+    
+    matchup = None
+    opponent_id = None
     for m in schedule:
-        if m.get('matchupPeriodId') == data['status']['currentMatchupPeriod']:
-            home = m.get('home', {})
-            away = m.get('away', {})
-            if home.get('teamId') == team_id:
-                return away.get('teamId'), data['status']['currentMatchupPeriod']
-            if away.get('teamId') == team_id:
-                return home.get('teamId'), data['status']['currentMatchupPeriod']
-    return None, None
+        home = m.get('home', {})
+        away = m.get('away', {})
+        if home.get('teamId') == MY_TEAM_ID:
+            matchup = m
+            opponent_id = away.get('teamId')
+            break
+        if away.get('teamId') == MY_TEAM_ID:
+            matchup = m
+            opponent_id = home.get('teamId')
+            break
+                
+    return opponent_id, current_matchup_period, matchup
+
+def get_player_points_for_scoring_period(sp_id):
+    # Fetch player points for a specific scoring period using mScoreboard
+    data = get_league_data(f"mScoreboard&scoringPeriodId={sp_id}")
+    if not data:
+        return {}
+    
+    points_map = {}
+    for m in data.get('schedule', []):
+        for side in ['home', 'away']:
+            team_data = m.get(side, {})
+            roster = team_data.get('rosterForCurrentScoringPeriod', {})
+            for entry in roster.get('entries', []):
+                # Robust ID extraction
+                p_id = entry.get('playerId')
+                if p_id is None:
+                    p_id = entry.get('playerPoolEntry', {}).get('playerId')
+                if p_id is None:
+                    p_id = entry.get('playerPoolEntry', {}).get('player', {}).get('id')
+                
+                if p_id:
+                    points = entry.get('playerPoolEntry', {}).get('appliedStatTotal', 0)
+                    points_map[str(p_id)] = points
+    return points_map
 
 def get_team_pitchers(team_id):
     data = get_team_roster(team_id)
@@ -243,25 +281,46 @@ def get_waiver_starts():
 
 def get_organized_starts():
     load_team_names()
-    opponent_id, matchup_id = get_current_matchup_opponent(MY_TEAM_ID)
+    opponent_id, matchup_id, current_matchup = get_current_matchup_info()
     if not opponent_id:
         return {}
 
     # Calculate dates
     today = datetime.now(ZoneInfo("America/New_York"))
+    # Season reference
+    season_start = datetime(2026, 3, 25, tzinfo=ZoneInfo("America/New_York"))
+    
     if matchup_id == 1:
-        start_date = datetime(2026, 3, 25, tzinfo=ZoneInfo("America/New_York"))
+        start_date = season_start
         end_date = datetime(2026, 4, 5, tzinfo=ZoneInfo("America/New_York"))
     else:
         start_date = today - timedelta(days=today.weekday())
         end_date = start_date + timedelta(days=6)
 
-    # Convert date range to strings
+    # Convert date range to strings and calculate Scoring Periods
     date_range = []
+    sp_map = {} # date_str -> sp_id
     curr = start_date
     while curr <= end_date:
-        date_range.append(curr.strftime("%Y%m%d"))
+        ds = curr.strftime("%Y%m%d")
+        date_range.append(ds)
+        # SP calculation: days from March 25
+        sp_id = (curr - season_start).days + 1
+        if sp_id > 0:
+            sp_map[ds] = sp_id
         curr += timedelta(days=1)
+
+    # Get points for relevant SPs (past and today)
+    # Today's SP
+    current_sp = (today - season_start).days + 1
+    all_player_points = {} # (player_id, sp_id) -> points
+    
+    # We only care about SPs that have happened or are happening
+    relevant_sps = set(sp for ds, sp in sp_map.items() if sp <= current_sp)
+    for sp in relevant_sps:
+        sp_points = get_player_points_for_scoring_period(sp)
+        for p_id, pts in sp_points.items():
+            all_player_points[(p_id, sp)] = pts
 
     my_pitchers = get_team_pitchers(MY_TEAM_ID)
     opp_pitchers = get_team_pitchers(opponent_id)
@@ -275,6 +334,13 @@ def get_organized_starts():
         if s['id'] in pitcher_ids:
             p_info = next((p for p in all_pitchers if p['id'] == s['id']), {})
             s['team'] = p_info.get('team_name', 'Unknown')
+            
+            # Lookup points if the game is in the past or today
+            ds = s['date']
+            sp = sp_map.get(ds)
+            pts = all_player_points.get((s['id'], sp))
+            s['points'] = pts if pts is not None else "-"
+            
             starts.append(s)
     
     if not starts:
@@ -297,6 +363,7 @@ def get_organized_starts():
         s['Display Date'] = datetime.strptime(s['date'], "%Y%m%d").strftime("%a, %b %d")
         teams_dict[team_name].append({
             'Pitcher': s['name'],
+            'Points': s['points'],
             'Time': s['time'],
             'Date': s['Display Date'],
             'Game': s['game']
@@ -315,15 +382,95 @@ def get_organized_starts():
             
     return final_dict
 
+def get_matchup_dashboard_data():
+    load_team_names()
+    opp_id, matchup_id, matchup_data = get_current_matchup_info()
+    if not matchup_data:
+        return None
+        
+    home = matchup_data.get('home', {})
+    away = matchup_data.get('away', {})
+    
+    return {
+        'matchup_period': matchup_id,
+        'home_name': get_team_name(home.get('teamId')),
+        'home_score': home.get('totalPoints'),
+        'away_name': get_team_name(away.get('teamId')),
+        'away_score': away.get('totalPoints'),
+        'my_team_id': MY_TEAM_ID
+    }
+
+def get_matchup_player_stats():
+    load_team_names()
+    opp_id, matchup_id, matchup_data = get_current_matchup_info()
+    if not matchup_data:
+        return None
+
+    today = datetime.now(ZoneInfo("America/New_York"))
+    season_start = datetime(2026, 3, 25, tzinfo=ZoneInfo("America/New_York"))
+    current_sp = (today - season_start).days + 1
+    yesterday_sp = current_sp - 1
+    
+    # We'll use get_team_roster (mRoster endpoint) for each team in the matchup to get the full current roster
+    matchup_stats = {'my_team': [], 'opp_team': []}
+    
+    # Get points for yesterday
+    yesterday_points = get_player_points_for_scoring_period(yesterday_sp) if yesterday_sp > 0 else {}
+    
+    # Also get matchup-long cumulative points for each player
+    # We'll use mMatchup to get the cumulative totals for the current period
+    m_data = get_league_data("mMatchup")
+    m_info = [m for m in m_data.get('schedule', []) if m.get('id') == matchup_data['id']][0]
+    cumulative_points = {}
+    for side in ['home', 'away']:
+        team_roster = m_info.get(side, {}).get('rosterForMatchupPeriod', {})
+        for entry in team_roster.get('entries', []):
+            p_id = str(entry.get('playerId'))
+            cumulative_points[p_id] = entry.get('playerPoolEntry', {}).get('appliedStatTotal', 0)
+
+    for side in ['my_team', 'opp_team']:
+        t_id = MY_TEAM_ID if side == 'my_team' else opp_id
+        roster_data = get_team_roster(t_id)
+        if not roster_data:
+            continue
+            
+        roster = roster_data.get('roster', {})
+        for entry in roster.get('entries', []):
+            player = entry.get('playerPoolEntry', {}).get('player', {})
+            player_id = str(player.get('id'))
+            name = player.get('fullName', 'Unknown Player')
+            
+            # Cumulative points
+            total_pts = cumulative_points.get(player_id, 0)
+            
+            # Yesterday's points
+            yest_pts = yesterday_points.get(player_id, 0)
+            
+            matchup_stats[side].append({
+                'Player': name,
+                'Yesterday': yest_pts,
+                'Total': total_pts
+            })
+    
+    # Sort by total points descending
+    matchup_stats['my_team'].sort(key=lambda x: x['Total'], reverse=True)
+    matchup_stats['opp_team'].sort(key=lambda x: x['Total'], reverse=True)
+    
+    return matchup_stats
+
 def main():
     load_team_names()
     print(f"Checking schedule for Team {get_team_name(MY_TEAM_ID)}...")
-    opponent_id, matchup_id = get_current_matchup_opponent(MY_TEAM_ID)
+    opponent_id, matchup_id, matchup_data = get_current_matchup_info()
     if not opponent_id:
         print("Couldn't find current matchup.")
         return
 
     print(f"Current Matchup: {get_team_name(MY_TEAM_ID)} vs {get_team_name(opponent_id)} (Matchup Period {matchup_id})")
+    if matchup_data:
+        home = matchup_data.get('home', {})
+        away = matchup_data.get('away', {})
+        print(f"Score: {get_team_name(home.get('teamId'))} {home.get('totalPoints')} - {get_team_name(away.get('teamId'))} {away.get('totalPoints')}")
     
     teams_dict = get_organized_starts()
 
@@ -336,9 +483,9 @@ def main():
         
         table_data = []
         for s in team_starts:
-            table_data.append([s['Pitcher'], s['Time'], s['Date'], s['Game']])
+            table_data.append([s['Pitcher'], s['Points'], s['Time'], s['Date'], s['Game']])
         
-        headers = ["Pitcher", "Start Time", "Date", "Matchup"]
+        headers = ["Pitcher", "Points", "Start Time", "Date", "Matchup"]
         try:
             print(tabulate(table_data, headers=headers, tablefmt="fancy_grid"))
         except ImportError:
