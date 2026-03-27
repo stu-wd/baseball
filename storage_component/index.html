@@ -1,28 +1,26 @@
-
-    <!DOCTYPE html>
-    <html>
-    <body>
-        <script>
-            function sendMessageToStreamlit(value) {
-                window.parent.postMessage({
-                    type: 'streamlit:setComponentValue',
-                    value: value
-                }, '*');
+<!DOCTYPE html>
+<html>
+<head>
+    <!-- Basic Streamlit component library -->
+    <script src="https://cdn.jsdelivr.net/npm/streamlit-component-lib@1.4.0/dist/streamlit-component-lib.js"></script>
+    <script>
+        function onRender(event) {
+            const {storage_key, action, value} = event.detail.args;
+            
+            if (action === "get") {
+                const storedValue = localStorage.getItem(storage_key);
+                Streamlit.setComponentValue(storedValue);
+            } else if (action === "set") {
+                localStorage.setItem(storage_key, value);
+                Streamlit.setComponentValue(value);
             }
+        }
 
-            window.addEventListener("message", (event) => {
-                if (event.data.type === "streamlit:render") {
-                    const {storage_key, action, value} = event.data.args;
-                    if (action === "get") {
-                        const stored = localStorage.getItem(storage_key);
-                        sendMessageToStreamlit(stored);
-                    } else if (action === "set") {
-                        localStorage.setItem(storage_key, value);
-                        sendMessageToStreamlit(value);
-                    }
-                }
-            });
-        </script>
-    </body>
-    </html>
-    
+        // Connect to Streamlit
+        Streamlit.events.addEventListener(Streamlit.EVENTS.RENDER, onRender);
+        Streamlit.setComponentReady();
+    </script>
+</head>
+<body>
+</body>
+</html>
