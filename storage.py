@@ -2,41 +2,11 @@ import streamlit as st
 import streamlit.components.v1 as components
 import os
 
-# Create a small HTML file for the component
-COMPONENT_DIR = os.path.join(os.path.dirname(__file__), "storage_component")
-if not os.path.exists(COMPONENT_DIR):
-    os.makedirs(COMPONENT_DIR)
+# Define the component directory relative to this file
+COMPONENT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "storage_component")
 
-INDEX_PATH = os.path.join(COMPONENT_DIR, "index.html")
-with open(INDEX_PATH, "w") as f:
-    f.write("""
-    <!DOCTYPE html>
-    <html>
-    <body>
-        <script>
-            function sendMessageToStreamlit(value) {
-                window.parent.postMessage({
-                    type: 'streamlit:setComponentValue',
-                    value: value
-                }, '*');
-            }
-
-            window.addEventListener("message", (event) => {
-                if (event.data.type === "streamlit:render") {
-                    const {key, action, value} = event.data.args;
-                    if (action === "get") {
-                        const stored = localStorage.getItem(key);
-                        sendMessageToStreamlit(stored);
-                    } else if (action === "set") {
-                        localStorage.setItem(key, value);
-                        sendMessageToStreamlit(value);
-                    }
-                }
-            });
-        </script>
-    </body>
-    </html>
-    """)
+# The index.html is already created via git/write_to_file
+# So we only need to declare the component
 
 _storage_component = components.declare_component(
     "storage_component",
@@ -44,7 +14,9 @@ _storage_component = components.declare_component(
 )
 
 def get_local_storage(key):
+    """Read a value from browser's localStorage."""
     return _storage_component(key=key, action="get", default=None)
 
 def set_local_storage(key, value):
+    """Write a value to browser's localStorage."""
     return _storage_component(key=key, action="set", value=value, default=None)
