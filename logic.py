@@ -282,6 +282,12 @@ def get_organized_starts():
 
     # Group by Fantasy Team
     teams_dict = {}
+    my_team_name = get_team_name(MY_TEAM_ID)
+    
+    # We want my_team_name to be first, then other teams.
+    # Initializing with my_team_name (even if it might be empty later, we'll clean up)
+    teams_dict[my_team_name] = []
+
     for s in starts:
         team_name = s['team']
         if team_name not in teams_dict:
@@ -296,7 +302,18 @@ def get_organized_starts():
             'Game': s['game']
         })
         
-    return teams_dict
+    # Remove empty teams if they don't have starts, but keep my_team_name if it has starts
+    final_dict = {}
+    # First, add my team if it has starts
+    if teams_dict.get(my_team_name):
+        final_dict[my_team_name] = teams_dict[my_team_name]
+    
+    # Then add any other teams that have starts
+    for t_name, t_starts in teams_dict.items():
+        if t_name != my_team_name and t_starts:
+            final_dict[t_name] = t_starts
+            
+    return final_dict
 
 def main():
     load_team_names()
@@ -319,8 +336,7 @@ def main():
         
         table_data = []
         for s in team_starts:
-            display_date = datetime.strptime(s['date'], "%Y%m%d").strftime("%a, %b %d")
-            table_data.append([s['name'], s['time'], display_date, s['game']])
+            table_data.append([s['Pitcher'], s['Time'], s['Date'], s['Game']])
         
         headers = ["Pitcher", "Start Time", "Date", "Matchup"]
         try:
