@@ -13,10 +13,10 @@ _storage_component = components.declare_component(
     path=COMPONENT_DIR
 )
 
-def get_local_storage(key):
+def get_local_storage(storage_key, streamlit_key=None):
     """Read a value from browser's localStorage."""
-    return _storage_component(key=key, action="get", default=None)
+    return _storage_component(storage_key=storage_key, action="get", default=None, key=streamlit_key)
 
-def set_local_storage(key, value):
+def set_local_storage(storage_key, value, streamlit_key=None):
     """Write a value to browser's localStorage."""
-    return _storage_component(key=key, action="set", value=value, default=None)
+    return _storage_component(storage_key=storage_key, action="set", value=value, default=None, key=streamlit_key)

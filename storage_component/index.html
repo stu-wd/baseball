@@ -12,12 +12,12 @@
 
             window.addEventListener("message", (event) => {
                 if (event.data.type === "streamlit:render") {
-                    const {key, action, value} = event.data.args;
+                    const {storage_key, action, value} = event.data.args;
                     if (action === "get") {
-                        const stored = localStorage.getItem(key);
+                        const stored = localStorage.getItem(storage_key);
                         sendMessageToStreamlit(stored);
                     } else if (action === "set") {
-                        localStorage.setItem(key, value);
+                        localStorage.setItem(storage_key, value);
                         sendMessageToStreamlit(value);
                     }
                 }

@@ -16,7 +16,7 @@ import storage
 def check_password():
     """Returns True if the user had the correct password."""
     # Check if we have it in localStorage
-    stored_auth = storage.get_local_storage("baseball_auth")
+    stored_auth = storage.get_local_storage("baseball_auth", streamlit_key="get_auth")
     
     # If already in session or localStorage matches
     if st.session_state.get("password_correct") or stored_auth == "izyourboystrap":
@@ -28,7 +28,7 @@ def check_password():
         if st.session_state["password"] == "izyourboystrap":
             st.session_state["password_correct"] = True
             # Set to localStorage
-            storage.set_local_storage("baseball_auth", "izyourboystrap")
+            storage.set_local_storage("baseball_auth", "izyourboystrap", streamlit_key="set_auth")
             del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
