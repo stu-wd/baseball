@@ -50,7 +50,13 @@ def get_current_matchup_info():
     if not data:
         return None, None, None
     
-    current_matchup_period = data['status']['currentMatchupPeriod']
+    status = data.get('status', {})
+    if not status:
+        return None, None, None
+        
+    current_matchup_period = status.get('currentMatchupPeriod')
+    if not current_matchup_period:
+        return None, None, None
     
     # mScoreboard is better for live scores and roster entry IDs
     sb_data = get_league_data("mScoreboard")
@@ -62,8 +68,10 @@ def get_current_matchup_info():
     matchup = None
     opponent_id = None
     for m in schedule:
-        home = m.get('home', {})
-        away = m.get('away', {})
+        if not m or not isinstance(m, dict):
+            continue
+        home = m.get('home') or {}
+        away = m.get('away') or {}
         if home.get('teamId') == MY_TEAM_ID:
             matchup = m
             opponent_id = away.get('teamId')
@@ -82,11 +90,15 @@ def get_player_points_for_scoring_period(sp_id):
         return {}
     
     points_map = {}
-    for m in data.get('schedule', []):
+    for m in data.get('schedule') or []:
+        if not m or not isinstance(m, dict):
+            continue
         for side in ['home', 'away']:
-            team_data = m.get(side, {})
-            roster = team_data.get('rosterForCurrentScoringPeriod', {})
-            for entry in roster.get('entries', []):
+            team_data = m.get(side) or {}
+            roster = team_data.get('rosterForCurrentScoringPeriod') or {}
+            for entry in roster.get('entries') or []:
+                if not entry or not isinstance(entry, dict):
+                    continue
                 # Robust ID extraction
                 p_id = entry.get('playerId')
                 if p_id is None:
@@ -388,15 +400,15 @@ def get_matchup_dashboard_data():
     if not matchup_data:
         return None
         
-    home = matchup_data.get('home', {})
-    away = matchup_data.get('away', {})
+    home = matchup_data.get('home') or {}
+    away = matchup_data.get('away') or {}
     
     return {
         'matchup_period': matchup_id,
         'home_name': get_team_name(home.get('teamId')),
-        'home_score': home.get('totalPoints'),
+        'home_score': home.get('totalPoints', 0),
         'away_name': get_team_name(away.get('teamId')),
-        'away_score': away.get('totalPoints'),
+        'away_score': away.get('totalPoints', 0),
         'my_team_id': MY_TEAM_ID
     }
 
@@ -431,13 +443,16 @@ def get_matchup_player_stats():
     for side in ['my_team', 'opp_team']:
         t_id = MY_TEAM_ID if side == 'my_team' else opp_id
         roster_data = get_team_roster(t_id)
-        if not roster_data:
+        if not roster_data or not isinstance(roster_data, dict):
             continue
             
-        roster = roster_data.get('roster', {})
-        for entry in roster.get('entries', []):
-            player = entry.get('playerPoolEntry', {}).get('player', {})
-            player_id = str(player.get('id'))
+        roster = roster_data.get('roster') or {}
+        for entry in roster.get('entries') or []:
+            if not entry or not isinstance(entry, dict):
+                continue
+            player_entry = entry.get('playerPoolEntry') or {}
+            player = player_entry.get('player') or {}
+            player_id = str(player.get('id', 'Unknown'))
             name = player.get('fullName', 'Unknown Player')
             
             # Cumulative points
