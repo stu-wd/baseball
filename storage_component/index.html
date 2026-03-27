@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <script>
+        function sendMessageToStreamlit(value) {
+            window.parent.postMessage({
+                type: 'streamlit:setComponentValue',
+                value: value
+            }, '*');
+        }
+
+        window.addEventListener("message", (event) => {
+            if (event.data.type === "streamlit:render") {
+                const {key, action, value} = event.data.args;
+                if (action === "get") {
+                    const stored = localStorage.getItem(key);
+                    sendMessageToStreamlit(stored);
+                } else if (action === "set") {
+                    localStorage.setItem(key, value);
+                    sendMessageToStreamlit(value);
+                }
+            }
+        });
+    </script>
+</head>
+<body>
+</body>
+</html>

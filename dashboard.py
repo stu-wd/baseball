@@ -10,41 +10,39 @@ st.set_page_config(
     layout="wide"
 )
 
+import storage
+
 # Password protection logic
 def check_password():
     """Returns True if the user had the correct password."""
+    # Check if we have it in localStorage
+    stored_auth = storage.get_local_storage("baseball_auth")
+    
+    # If already in session or localStorage matches
+    if st.session_state.get("password_correct") or stored_auth == "izyourboystrap":
+        st.session_state["password_correct"] = True
+        return True
+
     def password_entered():
         """Checks whether a password entered by the user is correct."""
-        if st.session_state["password"] == "izyourboystrap": # Standard password for this league
+        if st.session_state["password"] == "izyourboystrap":
             st.session_state["password_correct"] = True
-            del st.session_state["password"]  # don't store password
+            # Set to localStorage
+            storage.set_local_storage("baseball_auth", "izyourboystrap")
+            del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
 
-    if "password_correct" not in st.session_state:
-        # First run, show input for password.
-        st.text_input(
-            "Enter password to access the Pitching Matchup Tracker:", 
-            type="password", 
-            on_change=password_entered, 
-            key="password"
-        )
-        if "password_correct" in st.session_state:
-            st.error("😕 Password incorrect")
-        return False
-    elif not st.session_state["password_correct"]:
-        # Password not correct, show input + error.
-        st.text_input(
-            "Enter password to access the Pitching Matchup Tracker:", 
-            type="password", 
-            on_change=password_entered, 
-            key="password"
-        )
+    # Show input for first-time login
+    st.text_input(
+        "Enter password to access the Pitching Matchup Tracker:", 
+        type="password", 
+        on_change=password_entered, 
+        key="password"
+    )
+    if st.session_state.get("password_correct") == False:
         st.error("😕 Password incorrect")
-        return False
-    else:
-        # Password correct.
-        return True
+    return False
 
 if not check_password():
     st.stop()
