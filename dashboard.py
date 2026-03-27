@@ -10,42 +10,39 @@ st.set_page_config(
     layout="wide"
 )
 
-import storage
+import streamlit_authenticator as stauth
 
-# Password protection logic
-def check_password():
-    """Returns True if the user had the correct password."""
-    # Check if we have it in localStorage
-    stored_auth = storage.get_local_storage("baseball_auth", streamlit_key="get_auth")
-    
-    # If already in session or localStorage matches
-    if st.session_state.get("password_correct") or stored_auth == "izyourboystrap":
-        st.session_state["password_correct"] = True
-        return True
+# --- AUTHENTICATION SETUP ---
+# In a real app, you might store this in a yaml file or environment variables
+credentials = {
+    'usernames': {
+        'manager': {
+            'name': 'League Manager',
+            'password': '$2b$12$/PoUYqeymevDjfpmuo8S.ertjeVxEj3CmqPcdkWc6RfottJjXR1dK' # Hashed 'izyourboystrap'
+        }
+    }
+}
 
-    def password_entered():
-        """Checks whether a password entered by the user is correct."""
-        if st.session_state["password"] == "izyourboystrap":
-            st.session_state["password_correct"] = True
-            # Set to localStorage
-            storage.set_local_storage("baseball_auth", "izyourboystrap", streamlit_key="set_auth")
-            del st.session_state["password"]
-        else:
-            st.session_state["password_correct"] = False
+authenticator = stauth.Authenticate(
+    credentials,
+    'baseball_dashboard', # Cookie name
+    'abcdef',              # Cookie key (for signing)
+    cookie_expiry_days=30  # Persistent for 30 days
+)
 
-    # Show input for first-time login
-    st.text_input(
-        "Enter password to access the Pitching Matchup Tracker:", 
-        type="password", 
-        on_change=password_entered, 
-        key="password"
-    )
-    if st.session_state.get("password_correct") == False:
-        st.error("😕 Password incorrect")
-    return False
+# Run the login widget (shows "Login" form)
+name, authentication_status, username = authenticator.login('main')
 
-if not check_password():
+if authentication_status == False:
+    st.error('Username/password is incorrect')
     st.stop()
+elif authentication_status == None:
+    st.warning('Please enter your username and password')
+    st.stop()
+
+# authentication_status is True -> Proceed to app
+st.sidebar.success(f'Welcome *{name}*')
+authenticator.logout('Logout', 'sidebar')
 
 st.title("⚾ Pitching Matchup Tracker")
 st.markdown("Track upcoming starts for your team and your current opponent.")
