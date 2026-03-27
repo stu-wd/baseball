@@ -68,11 +68,13 @@ def get_team_pitchers(team_id):
     
     pitchers = []
     # Position IDs: 1 (Pitcher), 11 (Probable Pitcher/RP/SP)
-    for entry in data.get('roster', {}).get('entries', []):
-        player = entry.get('playerPoolEntry', {}).get('player', {})
+    roster = data.get('roster') or {}
+    for entry in roster.get('entries') or []:
+        pool_entry = entry.get('playerPoolEntry') or {}
+        player = pool_entry.get('player') or {}
         pos_id = player.get('defaultPositionId')
         # Check primary position or games played
-        pos_played = player.get('gamesPlayedByPosition', {})
+        pos_played = player.get('gamesPlayedByPosition') or {}
         is_pitcher = pos_id in [1, 11] or any(p in ['1', '11'] for p in pos_played.keys())
         
         if is_pitcher:
@@ -89,7 +91,7 @@ def load_team_names():
     global team_names
     data = get_league_data("mTeam")
     if data:
-        for t in data.get('teams', []):
+        for t in data.get('teams') or []:
             team_names[t['id']] = t.get('name', f"Team {t['id']}")
 
 def get_team_name(team_id):
@@ -134,9 +136,10 @@ def get_player_status_in_fantasy(player_ids):
     ownership_map = {}
     for p in data.get('players', []):
         player_id = str(p.get('id'))
+        player_obj = p.get('player') or {}
         ownership_map[player_id] = {
             'team_id': p.get('onTeamId', 0),
-            'owned_pct': round(p.get('player', {}).get('ownership', {}).get('percentOwned', 0), 1)
+            'owned_pct': round((player_obj.get('ownership') or {}).get('percentOwned', 0), 1)
         }
     return ownership_map
 
@@ -165,14 +168,14 @@ def get_top_free_agent_pitchers(limit=50):
     slot_names = {14: 'SP', 15: 'RP', 11: 'P', 5: 'OF', 4: 'SS', 3: '3B', 2: '2B', 1: '1B', 0: 'C', 12: 'UTIL'}
     
     for p in response.json().get('players', []):
-        player = p.get('player', {})
-        eligible_slots = player.get('eligibleSlots', [])
+        player = p.get('player') or {}
+        eligible_slots = player.get('eligibleSlots') or []
         # Only show relevant pitching slots for the position string
         pos_labels = [slot_names.get(s, str(s)) for s in eligible_slots if s in [14, 15, 11]]
         
         players.append({
             'Name': player.get('fullName'),
-            'Owned %': round(player.get('ownership', {}).get('percentOwned', 0), 1),
+            'Owned %': round((player.get('ownership') or {}).get('percentOwned', 0), 1),
             'Status': p.get('status'),
             'Position': '/'.join(pos_labels) if pos_labels else 'P',
         })
@@ -205,8 +208,9 @@ def get_waiver_starts():
     for p in fa_players:
         player = p.get('player', {})
         name = player.get('fullName')
-        owned_pct = round(player.get('ownership', {}).get('percentOwned', 0), 1)
-        starts = player.get('starterStatusByProGame', {})
+        owned_pct = round((player.get('ownership') or {}).get('percentOwned', 0), 1)
+        # Fix: handle case where starterStatusByProGame is null (None)
+        starts = player.get('starterStatusByProGame') or {}
         for game_id, status in starts.items():
             if status == "PROBABLE":
                 if game_id not in starter_map:
