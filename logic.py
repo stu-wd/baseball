@@ -6,6 +6,8 @@ from zoneinfo import ZoneInfo
 from tabulate import tabulate # I should check if this is installed
 import os
 
+import os
+
 # Configuration
 LEAGUE_ID = "1863581964"
 MY_TEAM_ID = 9
@@ -93,27 +95,75 @@ def load_team_names():
 def get_team_name(team_id):
     return team_names.get(team_id, f"Team {team_id}")
 
-def get_pitcher_starts(date, pitcher_ids):
-    scoreboard = get_mlb_scoreboard(date)
-    if not scoreboard:
+def get_all_mlb_probables(date_range):
+    all_probables = []
+    for date_str in date_range:
+        scoreboard = get_mlb_scoreboard(date_str)
+        if not scoreboard:
+            continue
+        
+        for event in scoreboard.get('events', []):
+            event_id = event['id']
+            game_name = event['name']
+            event_time = to_est_time(event['date'])
+            for comp in event.get('competitions', []):
+                for competitor in comp.get('competitors', []):
+                    probables = competitor.get('probables', [])
+                    for p in probables:
+                        athlete = p.get('athlete', {})
+                        all_probables.append({
+                            'id': str(athlete.get('id')),
+                            'name': athlete.get('fullName'),
+                            'date': date_str,
+                            'time': event_time,
+                            'game': game_name
+                        })
+    return all_probables
+
+def get_player_status_in_fantasy(player_ids):
+    # Fetch mPlayerPool but limit to specific IDs to check ownership
+    url = f"https://lm-api-reads.fantasy.espn.com/apis/v3/games/flb/seasons/{SEASON_ID}/segments/0/leagues/{LEAGUE_ID}?view=mPlayerPool"
+    filters = {"players": {"filterIds": {"value": [int(i) for i in player_ids]}}}
+    headers = {"x-fantasy-filter": json.dumps(filters)}
+    
+    response = requests.get(url, cookies=COOKIES, headers=headers)
+    if response.status_code != 200:
+        return {}
+    
+    data = response.json()
+    ownership_map = {}
+    for p in data.get('players', []):
+        player_id = str(p.get('id'))
+        team_id = p.get('onTeamId', 0)
+        ownership_map[player_id] = team_id
+    return ownership_map
+
+def get_waiver_starts():
+    load_team_names()
+    today = datetime.now(ZoneInfo("America/New_York"))
+    # Check next 7 days for waivers
+    date_range = [(today + timedelta(days=i)).strftime("%Y%m%d") for i in range(8)]
+    
+    all_mlb_probables = get_all_mlb_probables(date_range)
+    if not all_mlb_probables:
         return []
     
-    starts = []
-    for event in scoreboard.get('events', []):
-        for comp in event.get('competitions', []):
-            for competitor in comp.get('competitors', []):
-                probables = competitor.get('probables', [])
-                for p in probables:
-                    athlete = p.get('athlete', {})
-                    a_id = str(athlete.get('id'))
-                    if a_id in pitcher_ids:
-                        starts.append({
-                            'name': athlete.get('fullName'),
-                            'date': date,
-                            'time': to_est_time(event.get('date')),
-                            'game': event.get('name')
-                        })
-    return starts
+    unique_ids = list(set(p['id'] for p in all_mlb_probables))
+    ownership_map = get_player_status_in_fantasy(unique_ids)
+    
+    waiver_starts = []
+    for s in all_mlb_probables:
+        on_team_id = ownership_map.get(s['id'], 0)
+        if on_team_id == 0:
+            s['Display Date'] = datetime.strptime(s['date'], "%Y%m%d").strftime("%a, %b %d")
+            waiver_starts.append({
+                'Pitcher': s['name'],
+                'Time': s['time'],
+                'Date': s['Display Date'],
+                'Game': s['game']
+            })
+            
+    return sorted(waiver_starts, key=lambda x: x['Date'])
 
 def get_organized_starts():
     load_team_names()
@@ -130,22 +180,26 @@ def get_organized_starts():
         start_date = today - timedelta(days=today.weekday())
         end_date = start_date + timedelta(days=6)
 
+    # Convert date range to strings
+    date_range = []
+    curr = start_date
+    while curr <= end_date:
+        date_range.append(curr.strftime("%Y%m%d"))
+        curr += timedelta(days=1)
+
     my_pitchers = get_team_pitchers(MY_TEAM_ID)
     opp_pitchers = get_team_pitchers(opponent_id)
-    
     all_pitchers = my_pitchers + opp_pitchers
     pitcher_ids = set(p['id'] for p in all_pitchers)
     
+    all_mlb_probables = get_all_mlb_probables(date_range)
+    
     starts = []
-    current_date = start_date
-    while current_date <= end_date:
-        date_str = current_date.strftime("%Y%m%d")
-        day_starts = get_pitcher_starts(date_str, pitcher_ids)
-        for s in day_starts:
-            p_info = next((p for p in all_pitchers if p['name'] == s['name']), {})
+    for s in all_mlb_probables:
+        if s['id'] in pitcher_ids:
+            p_info = next((p for p in all_pitchers if p['id'] == s['id']), {})
             s['team'] = p_info.get('team_name', 'Unknown')
             starts.append(s)
-        current_date += timedelta(days=1)
     
     if not starts:
         return {}
