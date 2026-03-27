@@ -18,10 +18,12 @@ credentials = {
     'usernames': {
         'fudge': {
             'name': 'Fudge',
+            'email': 'fudge@example.com', # Added email field
             'password': '$2b$12$/PoUYqeymevDjfpmuo8S.ertjeVxEj3CmqPcdkWc6RfottJjXR1dK' # Hashed 'izyourboystrap'
         },
         'stu_baby': {
             'name': 'Stu Baby',
+            'email': 'stu@example.com', # Added email field
             'password': '$2b$12$/PoUYqeymevDjfpmuo8S.ertjeVxEj3CmqPcdkWc6RfottJjXR1dK' # Hashed 'izyourboystrap'
         }
     }
@@ -29,9 +31,10 @@ credentials = {
 
 authenticator = stauth.Authenticate(
     credentials,
-    'baseball_dashboard', # Cookie name
-    'abcdef',              # Cookie key (for signing)
-    cookie_expiry_days=30  # Persistent for 30 days
+    'baseball_dashboard_v2', # Changed cookie name to invalidate stale sessions
+    'abcdef_random_key',     # Changed cookie key to invalidate stale sessions
+    cookie_expiry_days=30,
+    pre_authorized={'emails': []} # Correct parameter name is 'pre_authorized'
 )
 
 # Run the login widget (shows "Login" form)
