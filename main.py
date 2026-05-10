@@ -2,7 +2,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import standings, matchup, roster, pitching, players, news
+from routers import standings, matchup, roster, pitching, players, news, player_history
 from routers import cache as cache_router
 
 app = FastAPI(title="Baseball API")
@@ -19,6 +19,7 @@ app.include_router(matchup.router)
 app.include_router(roster.router)
 app.include_router(pitching.router)
 app.include_router(players.router)
+app.include_router(player_history.router)
 app.include_router(news.router)
 app.include_router(cache_router.router)
 
