@@ -44,3 +44,10 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
+
+# Agents
+agents/node_modules/
+agents/**/.agent-config.json
+
+# Local SQLite player cache
+player_cache.db
