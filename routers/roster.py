@@ -20,10 +20,15 @@ def get_roster(team_id: int):
         raise HTTPException(status_code=404, detail=f"Team {team_id} not found")
     return [
         {
+            "id": p.id,
             "name": p.name,
             "slot": config.SLOT_NAMES.get(p.lineup_slot_id, str(p.lineup_slot_id)),
             "total_points": round(p.applied_stat_total, 1),
             "injury_status": p.injury_status or "ACTIVE",
+            "is_pitcher": (
+                p.default_position_id in (1, 11)
+                or any(s in config.PITCHER_SLOT_IDS for s in p.eligible_slots)
+            ),
         }
         for p in players
     ]

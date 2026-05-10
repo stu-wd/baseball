@@ -1,14 +1,7 @@
+import Link from "next/link";
 import { apiFetch } from "@/lib/api";
-import { DataTable } from "@/components/data-table";
 import { TeamSelector } from "@/components/team-selector";
 import type { RosterTeam, RosterPlayer } from "@/lib/types";
-
-const COLUMNS = [
-  { key: "name", label: "Player" },
-  { key: "slot", label: "Slot" },
-  { key: "total_points", label: "Total Pts", numeric: true },
-  { key: "injury_status", label: "Status" },
-];
 
 export default async function RosterPage({
   searchParams,
@@ -27,7 +20,33 @@ export default async function RosterPage({
         <TeamSelector teams={teams} selectedId={selectedId} />
       </div>
       <p className="text-sm text-gray-400">{roster.length} players</p>
-      <DataTable rows={roster} columns={COLUMNS} />
+      <table className="w-full text-sm border-collapse">
+        <thead>
+          <tr className="text-left text-gray-400 border-b border-gray-700">
+            <th className="py-2 pr-4">Player</th>
+            <th className="py-2 pr-4">Slot</th>
+            <th className="py-2 pr-4 text-right">Total Pts</th>
+            <th className="py-2">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {roster.map((p) => (
+            <tr key={p.id} className="border-b border-gray-800 hover:bg-gray-800">
+              <td className="py-2 pr-4">
+                <Link
+                  href={`/players/${p.id}?type=${p.is_pitcher ? "pitcher" : "batter"}`}
+                  className="text-blue-400 hover:text-blue-300 hover:underline"
+                >
+                  {p.name}
+                </Link>
+              </td>
+              <td className="py-2 pr-4 text-gray-400">{p.slot}</td>
+              <td className="py-2 pr-4 text-right font-mono">{p.total_points}</td>
+              <td className="py-2 text-gray-400">{p.injury_status}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
